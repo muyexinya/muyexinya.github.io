@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  
+  
+  <title>Memory-Barriers | Hexo</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta name="description" content="Overview本文主要介绍Linux内存屏障的概念以及使用方法，目的在于避免过度使用内存屏障导致性能下降或内存屏障力度不够导致稳定性问题。本文中的关于ARM内存类型和内存屏障指令的介绍比较简单，建议阅读arm官方文档Armv8-A memory model和Learn the architecture - Memory Systems, Ordering, and Barriers来学习内存屏障">
+<meta property="og:type" content="article">
+<meta property="og:title" content="Memory-Barriers">
+<meta property="og:url" content="https://muyexinya.github.io/2024/09/28/Memory-Barriers/index.html">
+<meta property="og:site_name" content="Hexo">
+<meta property="og:description" content="Overview本文主要介绍Linux内存屏障的概念以及使用方法，目的在于避免过度使用内存屏障导致性能下降或内存屏障力度不够导致稳定性问题。本文中的关于ARM内存类型和内存屏障指令的介绍比较简单，建议阅读arm官方文档Armv8-A memory model和Learn the architecture - Memory Systems, Ordering, and Barriers来学习内存屏障">
+<meta property="og:locale">
+<meta property="og:image" content="https://muyexinya.github.io/2024/09/28/Memory-Barriers/image-20240928135446463.png">
+<meta property="og:image" content="https://muyexinya.github.io/2024/09/28/Memory-Barriers/image-20240928135500869.png">
+<meta property="og:image" content="https://muyexinya.github.io/2024/09/28/Memory-Barriers/image-20241007205836132.png">
+<meta property="og:image" content="https://muyexinya.github.io/2024/09/28/Memory-Barriers/image-20241007210228283.png">
+<meta property="og:image" content="https://muyexinya.github.io/2024/09/28/Memory-Barriers/image-20240928193515290.png">
+<meta property="og:image" content="https://muyexinya.github.io/Memory-Barriers/image-20240928200437148.png">
+<meta property="article:published_time" content="2024-09-28T11:07:25.000Z">
+<meta property="article:modified_time" content="2024-10-07T13:06:27.382Z">
+<meta property="article:author" content="muyexinya@163.com">
+<meta property="article:tag" content="操作系统">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:image" content="https://muyexinya.github.io/2024/09/28/Memory-Barriers/image-20240928135446463.png">
+  
+    <link rel="alternate" href="/atom.xml" title="Hexo" type="application/atom+xml">
+  
+  
+    <link rel="shortcut icon" href="/favicon.png">
+  
+  
+  
+<link rel="stylesheet" href="/css/style.css">
+
+  
+    
+<link rel="stylesheet" href="/fancybox/jquery.fancybox.min.css">
+
+  
+  
+<meta name="generator" content="Hexo 7.3.0"></head>
+
+<body>
+  <div id="container">
+    <div id="wrap">
+      <header id="header">
+  <div id="banner"></div>
+  <div id="header-outer" class="outer">
+    <div id="header-title" class="inner">
+      <h1 id="logo-wrap">
+        <a href="/" id="logo">Hexo</a>
+      </h1>
+      
+    </div>
+    <div id="header-inner" class="inner">
+      <nav id="main-nav">
+        <a id="main-nav-toggle" class="nav-icon"><span class="fa fa-bars"></span></a>
+        
+          <a class="main-nav-link" href="/">Home</a>
+        
+          <a class="main-nav-link" href="/archives">Archives</a>
+        
+      </nav>
+      <nav id="sub-nav">
+        
+        
+          <a class="nav-icon" href="/atom.xml" title="RSS Feed"><span class="fa fa-rss"></span></a>
+        
+        <a class="nav-icon nav-search-btn" title="Suche"><span class="fa fa-search"></span></a>
+      </nav>
+      <div id="search-form-wrap">
+        <form action="//google.com/search" method="get" accept-charset="UTF-8" class="search-form"><input type="search" name="q" class="search-form-input" placeholder="Suche"><button type="submit" class="search-form-submit">&#xF002;</button><input type="hidden" name="sitesearch" value="https://muyexinya.github.io"></form>
+      </div>
+    </div>
+  </div>
+</header>
+
+      <div class="outer">
+        <section id="main"><article id="post-Memory-Barriers" class="h-entry article article-type-post" itemprop="blogPost" itemscope itemtype="https://schema.org/BlogPosting">
+  <div class="article-meta">
+    <a href="/2024/09/28/Memory-Barriers/" class="article-date">
+  <time class="dt-published" datetime="2024-09-28T11:07:25.000Z" itemprop="datePublished">2024-09-28</time>
+</a>
+    
+  </div>
+  <div class="article-inner">
+    
+    
+      <header class="article-header">
+        
+  
+    <h1 class="p-name article-title" itemprop="headline name">
+      Memory-Barriers
+    </h1>
+  
+
+      </header>
+    
+    <div class="e-content article-entry" itemprop="articleBody">
+      
+        <h2 id="Overview"><a href="#Overview" class="headerlink" title="Overview"></a>Overview</h2><p>本文主要介绍Linux内存屏障的概念以及使用方法，目的在于避免过度使用内存屏障导致性能下降或内存屏障力度不够导致稳定性问题。本文中的关于ARM内存类型和内存屏障指令的介绍比较简单，建议阅读arm官方文档<em>Armv8-A memory model</em>和<em>Learn the architecture - Memory Systems, Ordering, and Barriers</em>来学习内存屏障指令的知识。</p>
+<h2 id="Arm内存类型"><a href="#Arm内存类型" class="headerlink" title="Arm内存类型"></a>Arm内存类型</h2><p>在armv8-A架构中，有两种内存类型：Normal memory 和Device memory。</p>
+<p>Normal memory是指RAM, Flash、ROM等可以存放内核、程序等可执行文件的内存，如下图所示：</p>
+<img src="/2024/09/28/Memory-Barriers/image-20240928135446463.png" class="" title="Normal Memory">
+
+
+
+<p>Device memory是指外设使用的内存，通常情况下，外设寄存器使用 Memory-Mapped I&#x2F;O（MMIO）映射到内存空间。</p>
+<img src="/2024/09/28/Memory-Barriers/image-20240928135500869.png" class="" title="Device memory">
+
+<h2 id="Domains"><a href="#Domains" class="headerlink" title="Domains"></a>Domains</h2><p>Data memory accesses can take longer and consume more power with cache coherency hardware</p>
+<p>than they otherwise would do. This overhead can be minimized by maintaining coherency between</p>
+<p>a smaller number of masters while ensuring that they are physically close in the processor. For this</p>
+<p>reason, the architecture splits the system into domains, and makes it possible to limit the overhead</p>
+<p>to those locations where the coherency is required.</p>
+<img src="/2024/09/28/Memory-Barriers/image-20241007205836132.png" class="" title="image-20241007205836132">
+
+
+
+<img src="/2024/09/28/Memory-Barriers/image-20241007210228283.png" class="" title="image-20241007210228283">
+
+<h2 id="指令乱序与屏障"><a href="#指令乱序与屏障" class="headerlink" title="指令乱序与屏障"></a>指令乱序与屏障</h2><h3 id="Reordering"><a href="#Reordering" class="headerlink" title="Reordering"></a>Reordering</h3><p>为了提高代码的运行效率，编译器会优化代码并重排指令，使得汇编指令顺序与高级语言逻辑顺序不一致。在弱有序内存架构中，CPU执行指令时，也会使用乱序发射和乱序执行技术来提高CPU并行执行指令的效率,比如多核并发访问共享数据。</p>
+<p>乱序执行在下图中，逻辑顺序是：Access1-&gt;Access2-&gt;Access3，实际指令完成的顺序是Access3-&gt;Access2-&gt;Access1。</p>
+<ol>
+<li>Access1经过Write Buffer将数据写入到外部内存中，</li>
+<li>Access2 读指令，cache miss</li>
+<li>Access3读指令，cache hit</li>
+</ol>
+<img src="/2024/09/28/Memory-Barriers/image-20240928193515290.png" class="" title="image-20240928193515290">
+
+<p>CPU会保证Read-after-write的逻辑指令不会乱序，如下图所示，如果指令乱序，LDRH会读到错误的值。</p>
+<p><img src="/./Memory-Barriers/image-20240928200437148.png" alt="image-20240928200437148"></p>
+<p>地址依赖的代码不会乱序,  如果Load或Store使用的地址是前一个指令Load的地址，CPU可以保证不发生乱序。</p>
+<p>In other cases, for example Address Dependencies, ordering is enforced. An Address Dependency</p>
+<p>occurs when a load or store uses the result of a previous load as an address. Here is an example:</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">LDR X0, [X1] </span><br><span class="line">STR X2, [X0] ; Result of previous load is the address in this store.</span><br></pre></td></tr></table></figure>
+
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br></pre></td><td class="code"><pre><span class="line">LDR X0, [X1] </span><br><span class="line">STR X2, [X5, X0] ;将x2的值存到X5+X0的地址中 Result of previous load is used to calculate the address.</span><br></pre></td></tr></table></figure>
+
+<p>控制依赖的指令无法保证执行顺序。</p>
+<figure class="highlight plaintext"><table><tr><td class="gutter"><pre><span class="line">1</span><br><span class="line">2</span><br><span class="line">3</span><br></pre></td><td class="code"><pre><span class="line">LDR X0, [X1] </span><br><span class="line">CBZ X0, somewhere_else </span><br><span class="line">LDR X2, [X5] ; The control dependency on X0 does not guarantee ordering.</span><br></pre></td></tr></table></figure>
+
+<h3 id="屏障"><a href="#屏障" class="headerlink" title="屏障"></a>屏障</h3><p>在某些场景下，为了避免指令执行的顺序和高级语言的逻辑顺序不一致导致的Bug，我们需要显式使用编译屏障或屏障指令来保证指令的执行顺序与逻辑顺序一致。</p>
+<h3 id="编译屏障"><a href="#编译屏障" class="headerlink" title="编译屏障"></a>编译屏障</h3><p><code>barrier()</code>函数可以防止编译器优化导致的指令重排。</p>
+<figure class="highlight c"><table><tr><td class="gutter"><pre><span class="line">1</span><br></pre></td><td class="code"><pre><span class="line"><span class="meta"># <span class="keyword">define</span> barrier() __asm__ __volatile__(<span class="string">&quot;&quot;</span>: : :<span class="string">&quot;memory&quot;</span>)</span></span><br></pre></td></tr></table></figure>
+
+<h3 id="ARM内存屏障指令"><a href="#ARM内存屏障指令" class="headerlink" title="ARM内存屏障指令"></a>ARM内存屏障指令</h3><p>为了防止CPU的乱序执行对指令重排，我们可以在相关代码中插入内存屏障指令，如Arm指令中的指令同步屏障指令（Instruction Synchronization Barrier,ISB）, 数据同步屏障指令(Data Synchronization Barrier, DSB)和数据存</p>
+<p>储屏障指令（Data Memory Barrier, DMB）。</p>
+<h4 id="ISB"><a href="#ISB" class="headerlink" title="ISB"></a>ISB</h4><h4 id="DSB"><a href="#DSB" class="headerlink" title="DSB"></a>DSB</h4><h4 id="DMB"><a href="#DMB" class="headerlink" title="DMB"></a>DMB</h4><p>DMB指令确保了DMB指令前的数据读写指令(LDR, STR)会在DMB指令前执行，并且在DMB之后的数据读写指令之前被指定共享域内的观察者观察到。同时DMB指令可以携带参数限定了哪些类型的显示访问是保序的，以及在指定的共享域中对哪些观察者保序。</p>
+<p>Q1. What is an Observer?</p>
+<p>A1. An Observer is a processing element or mechanism in the system, such as a peripheral device,</p>
+<p>that can generate reads from, or writes to, memory.</p>
+<p>Q2. Which DMB qualifier do I use to ensure that two stores that are separated by a DMB are</p>
+<p>observed in order by other Observers in the same Inner Shareable domain?</p>
+<p>A2. DMB ISHST</p>
+<p>Q3. Which memory barrier would be required to ensure that previous memory accesses are</p>
+<p>complete before execution continues?</p>
+<p>A3. DSB</p>
+<p>Q4. What are the architecturally defined Context synchronization events?</p>
+<p>A4. The architecturally defined Context synchronization events are as follows:</p>
+<p>• Performing an ISB operation</p>
+<p>• Taking an exception</p>
+<p>• Returning from an exception</p>
+<p>• Exit from Debug state</p>
+<h3 id="linux中的内存屏障"><a href="#linux中的内存屏障" class="headerlink" title="linux中的内存屏障"></a>linux中的内存屏障</h3><h4 id="隐式内存屏障"><a href="#隐式内存屏障" class="headerlink" title="隐式内存屏障"></a>隐式内存屏障</h4><p>wmb</p>
+<p>writel</p>
+<h2 id="参考文档"><a href="#参考文档" class="headerlink" title="参考文档"></a>参考文档</h2><ol>
+<li>Learn the architecture - Memory Systems, Ordering, and Barriers</li>
+<li>Armv8-A memory model</li>
+<li>Learn the architecture - ARMv8-A memory systems</li>
+<li><a target="_blank" rel="noopener" href="https://www.kernel.org/doc/html/latest/core-api/wrappers/memory-barriers.html">https://www.kernel.org/doc/html/latest/core-api/wrappers/memory-barriers.html</a></li>
+<li><a target="_blank" rel="noopener" href="https://blog.csdn.net/feelabclihu/article/details/126564748">https://blog.csdn.net/feelabclihu/article/details/126564748</a></li>
+</ol>
+
+      
+    </div>
+    <footer class="article-footer">
+      <a data-url="https://muyexinya.github.io/2024/09/28/Memory-Barriers/" data-id="cm9e0dyau0001m0v778ug3asr" data-title="Memory-Barriers" class="article-share-link"><span class="fa fa-share">Teilen</span></a>
+      
+      
+      
+  <ul class="article-tag-list" itemprop="keywords"><li class="article-tag-list-item"><a class="article-tag-list-link" href="/tags/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" rel="tag">操作系统</a></li></ul>
+
+    </footer>
+  </div>
+  
+    
+<nav id="article-nav">
+  
+    <a href="/2024/11/16/openwrt-wifi%E5%BC%80%E5%85%B3%E5%92%8C%E9%85%8D%E7%BD%AE%E6%B5%81%E7%A8%8B/" id="article-nav-newer" class="article-nav-link-wrap">
+      <strong class="article-nav-caption">Neuer</strong>
+      <div class="article-nav-title">
+        
+          openwrt_wifi开关和配置流程
+        
+      </div>
+    </a>
+  
+  
+</nav>
+
+  
+</article>
+
+
+</section>
+        
+          <aside id="sidebar">
+  
+    
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tags</h3>
+    <div class="widget">
+      <ul class="tag-list" itemprop="keywords"><li class="tag-list-item"><a class="tag-list-link" href="/tags/Wi-Fi/" rel="tag">Wi-Fi</a></li><li class="tag-list-item"><a class="tag-list-link" href="/tags/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" rel="tag">操作系统</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Tag Cloud</h3>
+    <div class="widget tagcloud">
+      <a href="/tags/Wi-Fi/" style="font-size: 10px;">Wi-Fi</a> <a href="/tags/%E6%93%8D%E4%BD%9C%E7%B3%BB%E7%BB%9F/" style="font-size: 10px;">操作系统</a>
+    </div>
+  </div>
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">Archiv</h3>
+    <div class="widget">
+      <ul class="archive-list"><li class="archive-list-item"><a class="archive-list-link" href="/archives/2025/04/">April 2025</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2024/11/">November 2024</a></li><li class="archive-list-item"><a class="archive-list-link" href="/archives/2024/09/">September 2024</a></li></ul>
+    </div>
+  </div>
+
+
+  
+    
+  <div class="widget-wrap">
+    <h3 class="widget-title">letzter Beitrag</h3>
+    <div class="widget">
+      <ul>
+        
+          <li>
+            <a href="/2025/04/12/Wi-Fi%20%E7%9A%84AP%E9%9A%94%E7%A6%BB%E5%8A%9F%E8%83%BD/">Wi-Fi的AP隔离功能的实现</a>
+          </li>
+        
+          <li>
+            <a href="/2024/11/16/openwrt-wifi%E5%BC%80%E5%85%B3%E5%92%8C%E9%85%8D%E7%BD%AE%E6%B5%81%E7%A8%8B/">openwrt_wifi开关和配置流程</a>
+          </li>
+        
+          <li>
+            <a href="/2024/09/28/Memory-Barriers/">Memory-Barriers</a>
+          </li>
+        
+      </ul>
+    </div>
+  </div>
+
+  
+</aside>
+        
+      </div>
+      <footer id="footer">
+  
+  <div class="outer">
+    <div id="footer-info" class="inner">
+      
+      &copy; 2025 muyexinya@163.com<br>
+      Powered by <a href="https://hexo.io/" target="_blank">Hexo</a>
+    </div>
+  </div>
+</footer>
+
+    </div>
+    <nav id="mobile-nav">
+  
+    <a href="/" class="mobile-nav-link">Home</a>
+  
+    <a href="/archives" class="mobile-nav-link">Archives</a>
+  
+</nav>
+    
+
+
+<script src="/js/jquery-3.6.4.min.js"></script>
+
+
+
+  
+<script src="/fancybox/jquery.fancybox.min.js"></script>
+
+
+
+
+<script src="/js/script.js"></script>
+
+
+
+
+
+  </div>
+</body>
+</html>
